@@ -28,18 +28,18 @@
 #define   ONE_ROTATION_LENGTH 230
 
 // Motor steps per revolution. Most steppers are 200 steps or 1.8 degrees/step
-#define MOTOR_STEPS 400
+#define MOTOR_STEPS 200
 // Target RPM for cruise speed
 #define RPM 120
 // Acceleration and deceleration values are always in FULL steps / s^2
-#define MOTOR_ACCEL 2000
-#define MOTOR_DECEL 1000
+#define MOTOR_ACCEL 10
+#define MOTOR_DECEL 10
 
 // Microstepping mode. If you hardwired it to save pins, set to the same value here.
-#define MICROSTEPS 16
+#define MICROSTEPS 1
 
-#define DIR 19
-#define STEP 23
+#define DIR 23
+#define STEP 19
 
 
 DRV8825 stepper(MOTOR_STEPS, DIR, STEP);
