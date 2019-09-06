@@ -17,6 +17,7 @@
 #include <time.h>
 #include <EEPROM.h>
 #include "BluetoothSerial.h"
+#include "DRV8825.h"
 
 
 //Define
@@ -25,6 +26,23 @@
 #define   LCD
 #define   STEP_PER_LENGTH     0.575  // 230 / 400 
 #define   ONE_ROTATION_LENGTH 230
+
+// Motor steps per revolution. Most steppers are 200 steps or 1.8 degrees/step
+#define MOTOR_STEPS 400
+// Target RPM for cruise speed
+#define RPM 120
+// Acceleration and deceleration values are always in FULL steps / s^2
+#define MOTOR_ACCEL 2000
+#define MOTOR_DECEL 1000
+
+// Microstepping mode. If you hardwired it to save pins, set to the same value here.
+#define MICROSTEPS 16
+
+#define DIR 19
+#define STEP 23
+
+
+DRV8825 stepper(MOTOR_STEPS, DIR, STEP);
 
 #define BufferRecords 16
 
@@ -140,6 +158,7 @@ unsigned char ssid_pattern = 0;
 
 
 
+
 //Global
 //------------------------------------------------------------------//
 void IRAM_ATTR onTimer(void);
@@ -179,21 +198,6 @@ void setup() {
   M5.Lcd.setTextColor(GREEN ,BLACK);
   M5.Lcd.fillScreen(BLACK);
 
-  /*
-  switch( ssid_pattern ) {
-      case 0:
-        ssid_buff = "Buffalo-G-0CBA";
-        pass_buff = "hh4aexcxesasx";
-        break;
-
-      case 1:
-        ssid_buff = "Macaw";
-        pass_buff = "1234567890";
-        break;
-  }
-  ssid = ssid_buff.c_str();
-  pass = pass_buff.c_str();
-  */
 
   Serial.begin(115200);
   bts.begin("M5Stack Satellite1");
@@ -233,6 +237,14 @@ void setup() {
     M5.Lcd.setCursor(5, 160);
     M5.Lcd.println("Failed to open sd");
   }
+
+  stepper.begin(RPM, MICROSTEPS);
+  // if using enable/disable on ENABLE pin (active LOW) instead of SLEEP uncomment next line
+  // stepper.setEnableActiveState(LOW);
+  stepper.enable();
+
+  stepper.setSpeedProfile(stepper.LINEAR_SPEED, MOTOR_ACCEL, MOTOR_DECEL);
+  stepper.startRotate(360);
   
 }
 
@@ -242,6 +254,19 @@ void setup() {
 //Main
 //------------------------------------------------------------------//
 void loop() {
+
+    static int step = 0;
+    unsigned wait_time = stepper.nextAction();
+    if (wait_time){
+        Serial.print("  step="); Serial.print(step++);
+        Serial.print("  dt="); Serial.print(wait_time);
+        Serial.print("  rpm="); Serial.print(stepper.getCurrentRPM());
+        Serial.println();
+    } else {
+        stepper.disable();
+        Serial.println("END");
+        delay(3600000);
+    }
 
   Timer_Interrupt();
   //ReceiveStepperData();
@@ -288,130 +313,8 @@ void loop() {
     case 0:
       break;
 
-    case 11:    
-      time_buff2 = millis();
 
-
-
-      pattern = 12;
-      break;
-
-    case 12:
-      if( millis() - time_buff2 >= 1000 ) {
-        pattern = 13;
-      }
-      break;
-
-    case 13:
-      break;
     
-    
-
-    case 21:
-      pattern = 22;
-      time_buff2 = millis();
-      break;
-
-    case 22:
-      if( millis() - time_buff2 >= 1000 ) {
-        pattern = 13;
-      }
-      break;
-
-    case 23:
-      break;
-    
-
-
-    // CountDown
-    case 111:    
-      if( current_time >= 52  ) {
-        time_buff2 = millis();
-        pattern = 113;      
-        hover_flag = true;
-        M5.Lcd.clear();
-        DuctedFan.attach(DuctedFanPin);
-        DuctedFan.write(0);
-        break;
-      }
-      bts.println( 60 - current_time );
-      break;
-
-    case 112:    
-      if( current_time < 1 ) {
-        pattern = 111;
-        break;
-      }
-      bts.println( 60 - current_time + 60 );
-      break;
-
-    case 113:    
-      if( millis() - time_buff2 >= 3000 ) {
-        DuctedFan.write(hover_val);
-        bts.println(" - Start within 5 seconds -");
-        time_buff2 = millis();
-        log_flag = true;
-        pattern = 114;
-        break;
-      }    
-      bts.println( 60 - current_time );
-      break;
-
-    case 114:   
-      if( millis() - time_buff2 >= 5000 ) {
-        time_buff = millis();
-        pattern = 115;
-        bts.println( "\n - Sequence start -" );
-        break;
-      }        
-      break;
-
-    case 115:   
-      time_stepper = time_ms;
-      pattern = 116;
-      //tx_pattern = 11;
-      time_buff2 = millis();
-      break;
-
-    case 116:   
-      if( millis() - time_buff2 >= 1000 ) {
-        pattern = 117;
-        break;
-      }
-      break;
-
-    case 117:   
-      break;
-
-    case 118:   
-      break;
-
-    case 119:
-      break;
-
-    case 120:   
-      if( millis() - time_buff2 >= 1000 ) {
-        pattern = 121;
-        break;
-      }
-      break;
-
-    case 121:
-      break;
-
-    case 131:
-      if( millis() - time_buff2 >= 5000 ) {
-        log_flag = false;
-        pattern = 0;
-        tx_pattern = 0;
-        hover_flag = false;
-        M5.Lcd.clear();
-        DuctedFan.detach();
-        break;
-      }
-      break;
-
-
     
   }
 
@@ -440,11 +343,9 @@ void loop() {
   if( limit_flag == 1 ) {
     if(Limit1State==0 && Limit2State==0 ) {
       if(pattern == 13 || pattern == 23) {
-        //SendByte(STEPMOTOR_I2C_ADDR, '!');
         pattern = 0;
       }
       if(pattern == 121) {
-        //SendByte(STEPMOTOR_I2C_ADDR, '!');
         time_buff2 = millis();
         pattern = 131;
         current_accel = 0;
