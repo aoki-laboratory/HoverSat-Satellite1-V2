@@ -17,32 +17,30 @@
 #include <time.h>
 #include <EEPROM.h>
 #include "BluetoothSerial.h"
-#include "DRV8825.h"
+#include "BasicStepperDriver.h"
 
 
 //Define
 //------------------------------------------------------------------//
 #define   TIMER_INTERRUPT     10      // ms
 #define   LCD
-#define   STEP_PER_LENGTH     0.575  // 230 / 400 
 #define   ONE_ROTATION_LENGTH 230
+#define   REDUCTION_RATIO 6.25
 
 // Motor steps per revolution. Most steppers are 200 steps or 1.8 degrees/step
-#define MOTOR_STEPS 200
+#define MOTOR_STEPS 400
 // Target RPM for cruise speed
 #define RPM 120
-// Acceleration and deceleration values are always in FULL steps / s^2
-#define MOTOR_ACCEL 10
-#define MOTOR_DECEL 10
 
 // Microstepping mode. If you hardwired it to save pins, set to the same value here.
 #define MICROSTEPS 1
 
-#define DIR 23
+#define DIR 26
 #define STEP 19
 
 
-DRV8825 stepper(MOTOR_STEPS, DIR, STEP);
+// 2-wire basic config, microstepping is hardwired on the driver
+BasicStepperDriver stepper(MOTOR_STEPS, DIR, STEP);
 
 #define BufferRecords 16
 
@@ -77,12 +75,16 @@ static const int Limit1Pin = 17;
 static const int Limit2Pin = 34;
 int  Limit1State = 1;
 int  Limit2State = 1;
-const int stepper_enable = 0;
-char  stepper_enable_status = 1;
 
-static const int Stepper_Step_Pin = 23;
-static const int Stepper_Dir_Pin = 19;
-static const int Stepper_Enable_Pin = 18;
+// Stepper
+const int Stepper_Enable_Pin = 25;
+int       Stepper_Enable = 1;
+int       motor_accel = 666;
+int       motor_decel = 666;
+
+static const int TSND_121 = 13;
+int  TSND_121_ENABLE = 0;
+
 
 // progress
 float  current_length;
@@ -115,6 +117,8 @@ String timeStr;
 File file;
 String fname_buff;
 const char* fname;
+
+const char* dfname;
 
 String accel_buff;
 const char* accel_out;
@@ -171,6 +175,7 @@ void bluetooth_rx(void);
 void bluetooth_tx(void);
 void eeprom_write(void);
 void eeprom_read(void);
+void TSND121( void );
 
 
 //Setup
@@ -221,9 +226,8 @@ void setup() {
 
   pinMode(Limit1Pin, INPUT);
   pinMode(Limit2Pin, INPUT);
+  pinMode(TSND_121, OUTPUT);
 
-  pinMode(Stepper_Step_Pin, OUTPUT);
-  pinMode(Stepper_Dir_Pin, OUTPUT);
   pinMode(Stepper_Enable_Pin, OUTPUT);
 
   // Initialize Timer Interrupt
@@ -232,19 +236,20 @@ void setup() {
   timerAlarmWrite(timer, TIMER_INTERRUPT * 1000, true);
   timerAlarmEnable(timer);
 
-  file = SD.open(fname, FILE_APPEND);
+  //file = SD.open(fname, FILE_APPEND);
+  //if( !file ) {
+  //  M5.Lcd.setCursor(5, 160);
+  //  M5.Lcd.println("Failed to open sd");
+  //}
+
+  file = SD.open("/Satellite1_Log.csv", FILE_APPEND);
   if( !file ) {
-    M5.Lcd.setCursor(5, 160);
-    M5.Lcd.println("Failed to open sd");
+    M5.Lcd.setCursor(25, 160);
+    M5.Lcd.println("FailedToOpenLog");
   }
 
-  stepper.begin(RPM, MICROSTEPS);
-  // if using enable/disable on ENABLE pin (active LOW) instead of SLEEP uncomment next line
-  // stepper.setEnableActiveState(LOW);
-  stepper.enable();
-
-  stepper.setSpeedProfile(stepper.LINEAR_SPEED, MOTOR_ACCEL, MOTOR_DECEL);
-  stepper.startRotate(360);
+  stepper.begin(RPM, MICROSTEPS); 
+  digitalWrite( Stepper_Enable_Pin, 1);
   
 }
 
@@ -255,18 +260,7 @@ void setup() {
 //------------------------------------------------------------------//
 void loop() {
 
-    static int step = 0;
-    unsigned wait_time = stepper.nextAction();
-    if (wait_time){
-        Serial.print("  step="); Serial.print(step++);
-        Serial.print("  dt="); Serial.print(wait_time);
-        Serial.print("  rpm="); Serial.print(stepper.getCurrentRPM());
-        Serial.println();
-    } else {
-        stepper.disable();
-        Serial.println("END");
-        delay(3600000);
-    }
+
 
   Timer_Interrupt();
   //ReceiveStepperData();
@@ -313,9 +307,132 @@ void loop() {
     case 0:
       break;
 
+    case 11:    
+      digitalWrite( Stepper_Enable_Pin, 0);
+      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.setRPM(ex_velocity*60*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.move(ex_length*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH); 
+      time_buff2 = millis();
+      pattern = 12;
+      break;
 
-    
-    
+    case 12:
+      if( millis() - time_buff2 >= 1000 ) {
+        digitalWrite( Stepper_Enable_Pin, 1);
+        pattern = 0;
+      }
+      break;
+
+      case 21:    
+      digitalWrite( Stepper_Enable_Pin, 0);
+      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.setRPM(ex_velocity*60*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.move((ex_length+300)*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH*-1); 
+      time_buff2 = millis();
+      pattern = 22;
+      break;
+
+    case 22:
+      if( millis() - time_buff2 >= 1000 ) {
+        digitalWrite( Stepper_Enable_Pin, 1);
+        pattern = 0;
+      }
+      break;
+
+
+    // CountDown
+    case 111:    
+      if( current_time >= 52  ) {
+        time_buff2 = millis();
+        pattern = 113;      
+        hover_flag = true;
+        M5.Lcd.clear();
+        DuctedFan.attach(DuctedFanPin);
+        DuctedFan.write(0);
+        break;
+      }
+      bts.println( 60 - current_time );
+      break;
+
+    case 112:     
+      if( current_time < 1 ) {
+        pattern = 111;
+        break;
+      }
+      bts.println( 60 - current_time + 60 );
+      break;
+
+    case 113:    
+      if( millis() - time_buff2 >= 3000 ) {
+        DuctedFan.write(hover_val);
+        bts.println(" - Start within 5 seconds -");
+        time_buff2 = millis();
+        log_flag = false;
+        pattern = 122;
+        break;
+      }    
+      bts.println( 60 - current_time );
+      break;
+
+    case 122:   
+      if( millis() - time_buff2 >= 3000 ) {
+        time_buff2 = millis();
+        pattern = 114;
+        TSND121();
+        bts.println( "\n - Log start -" );
+        break;
+      }        
+      break;
+
+    case 114:   
+      if( millis() - time_buff2 >= 5000 ) {
+        time_buff = millis();
+        pattern = 115;
+        bts.println( "\n - Sequence start -" );
+        break;
+      }        
+      break;
+
+    case 115:   
+      time_stepper = time_ms;
+      digitalWrite( Stepper_Enable_Pin, 0);
+      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.setRPM(ex_velocity*60*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.move(ex_length*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      time_buff2 = millis();
+      pattern = 116;
+      break;
+
+    case 116:   
+      if( millis() - time_buff2 >= wait*1000 ) {
+        pattern = 117;
+        break;
+      }
+      break;
+
+    case 117:
+      digitalWrite( Stepper_Enable_Pin, 0);
+      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.setRPM(ex_velocity*60*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.move((ex_length+300)*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH*-1);
+      digitalWrite( Stepper_Enable_Pin, 1);
+      pattern = 118;
+      time_buff2 = millis();
+      break;
+
+    case 118:
+      if( millis() - time_buff2 >= 5000 ) {
+        log_flag = false;
+        pattern = 0;
+        tx_pattern = 0;
+        TSND121();
+        hover_flag = false;
+        M5.Lcd.clear();
+        DuctedFan.detach();
+        break;
+      }
+      break;
+       
   }
 
       
@@ -342,12 +459,12 @@ void loop() {
 
   if( limit_flag == 1 ) {
     if(Limit1State==0 && Limit2State==0 ) {
-      if(pattern == 13 || pattern == 23) {
+      if(pattern == 11 || pattern == 21) {
         pattern = 0;
       }
-      if(pattern == 121) {
+      if(pattern == 117) {
         time_buff2 = millis();
-        pattern = 131;
+        pattern = 118;
         current_accel = 0;
         current_velocity = 0;
         current_length = 0;
@@ -484,18 +601,14 @@ void bluetooth_rx(void) {
       case 20:
         rx_pattern = 0;
         tx_pattern = 20;
-        file = SD.open(fname, FILE_APPEND);
-        file.print("NTP");
+        file = SD.open("/Satellite1_Log.csv", FILE_APPEND);
+        file.print("0");
         file.print(",");
-        file.print("Pattern");
+        file.print(ex_length);
         file.print(",");
-        file.print("Time [ms]");
+        file.print(ex_velocity);
         file.print(",");
-        file.print("Length [mm]");
-        file.print(",");
-        file.print("Velocity [mm/s]");
-        file.print(",");
-        file.print("Accel [mm/s^2]");
+        file.print(ex_accel);
         file.println(",");
         file.close();
 
@@ -752,6 +865,17 @@ void bluetooth_tx(void) {
       break;
                  
     }
+}
+
+
+// TSND 121
+//------------------------------------------------------------------//
+void TSND121( void ) {
+    TSND_121_ENABLE = 1;
+    digitalWrite( TSND_121, HIGH );
+    delay(2000);
+    digitalWrite( TSND_121, LOW );
+
 }
 
 
