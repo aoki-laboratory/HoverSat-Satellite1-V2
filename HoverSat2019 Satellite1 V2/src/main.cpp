@@ -98,10 +98,10 @@ int bts_index = 0;
 
 // Your WiFi credentials.
 // Set password to "" for open networks.
-char ssid[] = "Buffalo-G-0CBA";
-char pass[] = "hh4aexcxesasx";
-//char ssid[] = "X1Extreme-Hotspot";
-//char pass[] = "5]6C458w";
+//char ssid[] = "Buffalo-G-0CBA";
+//char pass[] = "hh4aexcxesasx";
+char ssid[] = "X1Extreme-Hotspot";
+char pass[] = "5]6C458w";
 //char ssid[] = "Macaw";
 //char pass[] = "1234567890";
 
@@ -351,6 +351,9 @@ void loop() {
         DuctedFan.write(0);
         break;
       }
+      M5.Lcd.setCursor(180, 100);
+      M5.Lcd.clear();
+      M5.Lcd.println(60 - current_time);
       bts.println( 60 - current_time );
       break;
 
@@ -360,6 +363,9 @@ void loop() {
         break;
       }
       bts.println( 60 - current_time + 60 );
+      M5.Lcd.setCursor(180, 100);
+      M5.Lcd.clear();
+      M5.Lcd.println(60 - current_time);
       break;
 
     case 113:    
@@ -372,6 +378,9 @@ void loop() {
         break;
       }    
       bts.println( 60 - current_time );
+      M5.Lcd.setCursor(180, 100);
+      M5.Lcd.clear();
+      M5.Lcd.println(60 - current_time);
       break;
 
     case 122:   
@@ -405,7 +414,7 @@ void loop() {
 
     case 116:   
       if( millis() - time_buff2 >= wait*1000 ) {
-        pattern = 117;
+        pattern = 118;
         break;
       }
       break;
@@ -454,7 +463,14 @@ void loop() {
   } else if (M5.BtnB.wasPressed() && pattern == 0) {  
     pattern = 11;
   } else if (M5.BtnC.wasPressed() && pattern == 0) { 
-    pattern = 21;
+    M5.Lcd.clear();
+    M5.Lcd.setCursor(82, 100);
+    M5.Lcd.println("Sequence");
+    if( current_time >= 52 ) {   
+      pattern = 112;
+    } else {
+      pattern = 111;
+    }
   }
 
   if( limit_flag == 1 ) {
