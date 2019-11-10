@@ -45,6 +45,17 @@ BasicStepperDriver stepper(MOTOR_STEPS, DIR, STEP);
 #define BufferRecords 16
 
 
+#define NOOFPATTERNS  3
+
+int parameters[NOOFPATTERNS][5] =
+{
+// Accel, Velocity, Decel, TIme
+  {1000, 100, 100, 100, 15000 },
+  {1000, 200, 100, 400, 10000 },
+  {1000, 400, 100, 800, 10000 }
+};
+
+
 
 //Global
 //------------------------------------------------------------------//
@@ -98,10 +109,10 @@ int bts_index = 0;
 
 // Your WiFi credentials.
 // Set password to "" for open networks.
-//char ssid[] = "Buffalo-G-0CBA";
-//char pass[] = "hh4aexcxesasx";
-char ssid[] = "X1Extreme-Hotspot";
-char pass[] = "5]6C458w";
+char ssid[] = "Buffalo-G-0CBA";
+char pass[] = "hh4aexcxesasx";
+//char ssid[] = "X1Extreme-Hotspot";
+//char pass[] = "5]6C458w";
 //char ssid[] = "Macaw";
 //char pass[] = "1234567890";
 
@@ -152,13 +163,15 @@ hw_timer_t * timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 // Parameters
-unsigned char hover_val = 0;
+unsigned char hover_val = 70;
 unsigned int ex_length = 2000;
 unsigned int ex_velocity = 200;
 unsigned int ex_accel = 5;
+unsigned int ex_decel = 5;
 unsigned char wait = 5;
 unsigned char limit_flag = 1;
 unsigned char ssid_pattern = 0;
+unsigned char patternNo = 0;
 
 
 
@@ -195,7 +208,11 @@ void setup() {
   M5.Lcd.setCursor(82, 200);
   M5.Lcd.println("Satellite1");
 
-  eeprom_read();
+  //eeprom_read();
+  ex_length = parameters[0][0];
+  ex_velocity = parameters[0][1];
+  ex_accel = parameters[0][2];
+  ex_decel = parameters[0][3];
   
   delay(1000);
 
@@ -309,7 +326,7 @@ void loop() {
 
     case 11:    
       digitalWrite( Stepper_Enable_Pin, 0);
-      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_decel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
       stepper.setRPM(ex_velocity*60*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
       stepper.move(ex_length*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH); 
       time_buff2 = millis();
@@ -325,7 +342,7 @@ void loop() {
 
       case 21:    
       digitalWrite( Stepper_Enable_Pin, 0);
-      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_decel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
       stepper.setRPM(ex_velocity*60*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
       stepper.move((ex_length+300)*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH*-1); 
       time_buff2 = millis();
@@ -405,7 +422,7 @@ void loop() {
     case 115:   
       time_stepper = time_ms;
       digitalWrite( Stepper_Enable_Pin, 0);
-      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_decel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
       stepper.setRPM(ex_velocity*60*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
       stepper.move(ex_length*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
       time_buff2 = millis();
@@ -421,7 +438,7 @@ void loop() {
 
     case 117:
       digitalWrite( Stepper_Enable_Pin, 0);
-      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
+      stepper.setSpeedProfile(stepper.LINEAR_SPEED, ex_accel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH, ex_decel*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
       stepper.setRPM(ex_velocity*60*REDUCTION_RATIO/ONE_ROTATION_LENGTH);
       stepper.move((ex_length+300)*MOTOR_STEPS*REDUCTION_RATIO/ONE_ROTATION_LENGTH*-1);
       digitalWrite( Stepper_Enable_Pin, 1);
@@ -461,16 +478,28 @@ void loop() {
       DuctedFan.detach();
     } 
   } else if (M5.BtnB.wasPressed() && pattern == 0) {  
-    pattern = 11;
+    patternNo++;
+    M5.Lcd.fillScreen(BLACK);
+    if( patternNo >= NOOFPATTERNS ) {
+      patternNo = 0;
+    }
+    ex_length = parameters[patternNo][0];
+    ex_velocity = parameters[patternNo][1];
+    ex_accel = parameters[patternNo][2];
+    ex_decel = parameters[patternNo][3];
+    
   } else if (M5.BtnC.wasPressed() && pattern == 0) { 
     M5.Lcd.clear();
     M5.Lcd.setCursor(82, 100);
-    M5.Lcd.println("Sequence");
     if( current_time >= 52 ) {   
       pattern = 112;
     } else {
       pattern = 111;
     }
+  } else if (M5.BtnB.pressedFor(2000)) {
+    pattern = 11;
+  } else if (M5.BtnC.pressedFor(2000)) {
+    pattern = 21;
   }
 
   if( limit_flag == 1 ) {
@@ -528,12 +557,61 @@ void Timer_Interrupt( void ){
     switch( iTimer10 ) {
     case 1:
       if(hover_flag) {
-        M5.Lcd.fillScreen(BLACK);
-        M5.Lcd.setCursor(140, 105);
-        M5.Lcd.println(hover_val);
+        //M5.Lcd.fillScreen(BLACK);
+        M5.Lcd.fillRect(0, 0, 80, 80, TFT_WHITE);
+        M5.Lcd.fillRect(80, 0, 240, 80, TFT_DARKGREY);
+        M5.Lcd.fillRect(0, 80, 80, 160, TFT_DARKGREY);
+        M5.Lcd.setTextSize(5);
+        M5.Lcd.setCursor(13, 23);
+        M5.Lcd.setTextColor(BLACK);
+        M5.Lcd.print("S1");
+        M5.Lcd.setTextSize(3);
+        M5.Lcd.setCursor(96, 30);
+        M5.Lcd.setTextColor(WHITE);
+        M5.Lcd.printf("DctF     %3d", hover_val);
+        M5.Lcd.setCursor(15, 120);
+        M5.Lcd.print("No.");
+        M5.Lcd.setTextSize(5);
+        M5.Lcd.setCursor(28, 160);
+        M5.Lcd.print(patternNo+1);
+
+        M5.Lcd.setTextSize(2);
+        M5.Lcd.setCursor(96, 92);
+        M5.Lcd.printf("Move Length   %4d", parameters[patternNo][0]);
+        M5.Lcd.setCursor(96, 132);
+        M5.Lcd.printf("Acceleration  %4d", parameters[patternNo][1]);
+        M5.Lcd.setCursor(96, 172);
+        M5.Lcd.printf("Velocity      %4d", parameters[patternNo][2]);
+        M5.Lcd.setCursor(96, 212);
+        M5.Lcd.printf("Deceleration  %4d", parameters[patternNo][3]);
       } else {
-        M5.Lcd.setCursor(100, 105);
-        M5.Lcd.println("Disable");
+        M5.Lcd.fillRect(0, 0, 80, 80, TFT_WHITE);
+        M5.Lcd.fillRect(80, 0, 240, 80, TFT_DARKGREY);
+        M5.Lcd.fillRect(0, 80, 80, 160, TFT_DARKGREY);
+        M5.Lcd.setTextSize(5);
+        M5.Lcd.setCursor(13, 23);
+        M5.Lcd.setTextColor(BLACK);
+        M5.Lcd.print("S1");
+        M5.Lcd.setTextSize(3);
+        M5.Lcd.setCursor(96, 30);
+        M5.Lcd.setTextColor(WHITE);
+        M5.Lcd.print("DctF Disable");
+        M5.Lcd.setCursor(15, 120);
+        M5.Lcd.print("No.");
+        M5.Lcd.setTextSize(5);
+        M5.Lcd.setCursor(28, 160);
+        M5.Lcd.print(patternNo+1);
+
+        M5.Lcd.setTextSize(2);
+        M5.Lcd.setCursor(96, 92);
+        M5.Lcd.printf("Move Length   %4d", parameters[patternNo][0]);
+        M5.Lcd.setCursor(96, 132);
+        M5.Lcd.printf("Acceleration  %4d", parameters[patternNo][1]);
+        M5.Lcd.setCursor(96, 172);
+        M5.Lcd.printf("Velocity      %4d", parameters[patternNo][2]);
+        M5.Lcd.setCursor(96, 212);
+        M5.Lcd.printf("Deceleration  %4d", parameters[patternNo][3]);
+
       }
     break;
 
